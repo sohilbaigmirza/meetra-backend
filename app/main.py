@@ -87,26 +87,42 @@ class ItineraryResponse(BaseModel):
     match_score: Optional[int] = None
     potential_peers: List[dict] = []
 
-SAMPLE_PLACES = [
-    {"name": "Heritage Fort & Sunset Point", "cat": "Heritage", "cost": 40, "act": "Sightseeing & Photos"},
-    {"name": "Old City Street Food Street", "cat": "Food", "cost": 150, "act": "Evening Snacks & Chai"},
-    {"name": "Artisan Coffee Roastery", "cat": "Cafes", "cost": 200, "act": "Coffee & Chill"},
-    {"name": "Eco Botanical Gardens", "cat": "Nature", "cost": 30, "act": "Nature Walk"},
-    {"name": "Central Gaming Arcade", "cat": "Adventure", "cost": 250, "act": "Bowling & Arcade"},
-]
+# Expanded Place Catalog
+SAMPLE_PLACES = {
+    "Food": [
+        {"name": "Sarafa / Street Food Lane", "cost": 120, "act": "Evening Chaat & Street Food"},
+        {"name": "Rolls & Shawarma Joint", "cost": 160, "act": "Quick Dinner & Shakes"}
+    ],
+    "Cafes": [
+        {"name": "Artisan Coffee Roastery", "cost": 210, "act": "Cold Brew & Group Discussion"},
+        {"name": "Open-Air Rooftop Cafe", "cost": 280, "act": "Sunset Views & Chai"}
+    ],
+    "Heritage": [
+        {"name": "Historic Fort & Museum", "cost": 50, "act": "Architecture Walk & Photography"},
+        {"name": "Royal Memorial Cenotaphs", "cost": 30, "act": "Historical Exploration"}
+    ],
+    "Adventure": [
+        {"name": "Laser Tag & Arcade Arena", "cost": 350, "act": "Competitive Gaming"},
+        {"name": "Go-Karting Speedway", "cost": 450, "act": "Sprint Racing Laps"}
+    ],
+    "Nature": [
+        {"name": "Eco Botanical Garden & Lake", "cost": 40, "act": "Nature Trail & Chill"},
+        {"name": "Valley View Point", "cost": 0, "act": "Sunset Sitting & Jamming"}
+    ],
+    "Budget": [
+        {"name": "University Tapri Spot", "cost": 30, "act": "Cutting Chai & Maska Bun"},
+        {"name": "Central Library Lawns", "cost": 0, "act": "Open Air Study Session"}
+    ]
+}
 
 @app.post("/api/v1/itinerary/generate", response_model=ItineraryResponse)
 def generate_itinerary(req: ItineraryRequest):
     budget = req.budget
-    selected = [p for p in SAMPLE_PLACES if p["cost"] <= budget]
-    if not selected:
-        selected = [SAMPLE_PLACES[1]]
-    
-    stops = []
-    current_time = 14  # 2:00 PM start
+    selected_stops = []
     running_cost = 0
-
-    stops.append(ItineraryStop(
+    
+    # 1. Start point
+    selected_stops.append(ItineraryStop(
         time="2:00 PM",
         title=req.location,
         category="Start Point",
@@ -114,27 +130,48 @@ def generate_itinerary(req: ItineraryRequest):
         activity="Assemble & Depart"
     ))
 
-    for place in selected[:2]:
-        if running_cost + place["cost"] <= budget:
-            current_time += 1
-            stops.append(ItineraryStop(
-                time=f"{current_time}:00 PM",
-                title=place["name"],
-                category=place["cat"],
-                est_cost=place["cost"],
-                activity=place["act"]
+    # 2. Pick spots matching user's selected interests
+    candidate_spots = []
+    for interest in req.interests:
+        if interest in SAMPLE_PLACES:
+            candidate_spots.extend(SAMPLE_PLACES[interest])
+    
+    if not candidate_spots:
+        candidate_spots = SAMPLE_PLACES["Food"]
+
+    random.shuffle(candidate_spots)
+
+    current_hour = 14  # 2:00 PM
+    for spot in candidate_spots:
+        if len(selected_stops) >= 4:
+            break
+        if running_cost + spot["cost"] <= budget:
+            current_hour += 1
+            running_cost += spot["cost"]
+            selected_stops.append(ItineraryStop(
+                time=f"{current_hour % 12 or 12}:00 {'PM' if current_hour >= 12 else 'AM'}",
+                title=spot["name"],
+                category=spot["act"].split()[0],
+                est_cost=spot["cost"],
+                activity=spot["act"]
             ))
-            running_cost += place["cost"]
+
+    transit_estimate = 30 if req.is_solo else 20
+    calculated_total = running_cost + transit_estimate
+
+    # Dynamic match score
+    match_score = random.randint(85, 98) if not req.is_solo else None
 
     return ItineraryResponse(
         id=random.randint(1000, 9999),
-        title=f"{req.outing_type} Expedition",
-        total_cost=running_cost + 40,
-        est_duration=f"{req.available_hours} hours",
-        timeline=stops,
-        match_score=94 if not req.is_solo else None,
+        title=f"{req.location} to {req.outing_type}",
+        total_cost=calculated_total,
+        est_duration=f"{req.available_hours} hrs",
+        timeline=selected_stops,
+        match_score=match_score,
         potential_peers=[
             {"id": 1, "name": "Aarav Sharma", "college": "CSE '28", "interests": ["Food", "Cafes"], "rating": 4.9, "collabs": 7},
-            {"id": 2, "name": "Sneha Patel", "college": "ECE '28", "interests": ["Cafes", "Photography"], "rating": 4.8, "collabs": 4}
+            {"id": 2, "name": "Sneha Patel", "college": "ECE '28", "interests": ["Cafes", "Photography"], "rating": 4.8, "collabs": 4},
+            {"id": 3, "name": "Ashutosh G.", "college": "IT '27", "interests": ["Adventure", "Arcades"], "rating": 4.7, "collabs": 9}
         ] if not req.is_solo else []
     )
