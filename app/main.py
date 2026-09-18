@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session
 from .database import engine, Base, get_db
 from . import models, schemas
 
+from fastapi import Response
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
 # Auto-create tables in Neon on launch
 Base.metadata.create_all(bind=engine)
 
