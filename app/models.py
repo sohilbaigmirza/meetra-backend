@@ -37,3 +37,16 @@ class Outing(Base):
     created_by = Column(String, nullable=False)
     created_by_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class CollabRequest(Base):
+    __tablename__ = "collab_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    outing_id = Column(Integer, nullable=False)
+    sender_id = Column(Integer, nullable=False)
+    sender_name = Column(String, nullable=False)
+    receiver_id = Column(Integer, nullable=False)
+    receiver_name = Column(String, nullable=False)
+    match_percentage = Column(Integer, default=90)
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)

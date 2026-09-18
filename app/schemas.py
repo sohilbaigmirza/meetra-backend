@@ -42,3 +42,22 @@ class OutingResponse(OutingCreate):
 
     class Config:
         from_attributes = True
+
+class CollabRequestCreate(BaseModel):
+    outing_id: int
+    sender_id: int
+    sender_name: str
+    receiver_id: int
+    receiver_name: str
+    match_percentage: Optional[int] = 90
+
+class CollabRequestUpdate(BaseModel):
+    status: str  # 'accepted' or 'rejected'
+
+class CollabRequestResponse(CollabRequestCreate):
+    id: int
+    status: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

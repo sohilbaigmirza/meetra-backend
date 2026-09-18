@@ -190,3 +190,40 @@ def generate_itinerary(req: ItineraryRequest):
             {"id": 3, "name": "Ashutosh G.", "college": "IT '27", "interests": ["Adventure", "Arcades"], "rating": 4.7, "collabs": 9}
         ] if not req.is_solo else []
     )
+
+# ----------------- Collab Request Endpoints ----------------- #
+
+@app.post("/api/v1/collabs", response_model=schemas.CollabRequestResponse)
+def send_collab_request(req_in: schemas.CollabRequestCreate, db: Session = Depends(get_db)):
+    # Check if request already sent
+    existing = db.query(models.CollabRequest).filter(
+        models.CollabRequest.outing_id == req_in.outing_id,
+        models.CollabRequest.sender_id == req_in.sender_id,
+        models.CollabRequest.receiver_id == req_in.receiver_id
+    ).first()
+    if existing:
+        return existing
+    
+    collab = models.CollabRequest(**req_in.model_dump())
+    db.add(collab)
+    db.commit()
+    db.refresh(collab)
+    return collab
+
+@app.get("/api/v1/collabs/user/{user_id}", response_model=List[schemas.CollabRequestResponse])
+def get_user_collab_requests(user_id: int, db: Session = Depends(get_db)):
+    # Fetch pending incoming requests for this user
+    return db.query(models.CollabRequest).filter(
+        (models.CollabRequest.receiver_id == user_id) | (models.CollabRequest.sender_id == user_id)
+    ).order_by(models.CollabRequest.id.desc()).all()
+
+@app.put("/api/v1/collabs/{collab_id}", response_model=schemas.CollabRequestResponse)
+def update_collab_status(collab_id: int, update_in: schemas.CollabRequestUpdate, db: Session = Depends(get_db)):
+    collab = db.query(models.CollabRequest).filter(models.CollabRequest.id == collab_id).first()
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collab request not found")
+    
+    collab.status = update_in.status
+    db.commit()
+    db.refresh(collab)
+    return collab
