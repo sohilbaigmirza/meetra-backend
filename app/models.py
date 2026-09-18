@@ -50,3 +50,13 @@ class CollabRequest(Base):
     match_percentage = Column(Integer, default=90)
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    collab_id = Column(Integer, nullable=False, index=True)
+    sender_id = Column(Integer, nullable=False)
+    sender_name = Column(String, nullable=False)
+    text = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

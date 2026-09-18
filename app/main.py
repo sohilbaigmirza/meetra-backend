@@ -227,3 +227,17 @@ def update_collab_status(collab_id: int, update_in: schemas.CollabRequestUpdate,
     db.commit()
     db.refresh(collab)
     return collab
+
+# ----------------- Chat Endpoints ----------------- #
+
+@app.get("/api/v1/chat/{collab_id}", response_model=List[schemas.MessageResponse])
+def get_messages(collab_id: int, db: Session = Depends(get_db)):
+    return db.query(models.Message).filter(models.Message.collab_id == collab_id).order_by(models.Message.id.asc()).all()
+
+@app.post("/api/v1/chat", response_model=schemas.MessageResponse)
+def send_message(msg_in: schemas.MessageCreate, db: Session = Depends(get_db)):
+    msg = models.Message(**msg_in.model_dump())
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg

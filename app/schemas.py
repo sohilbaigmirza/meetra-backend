@@ -61,3 +61,16 @@ class CollabRequestResponse(CollabRequestCreate):
 
     class Config:
         from_attributes = True
+
+class MessageCreate(BaseModel):
+    collab_id: int
+    sender_id: int
+    sender_name: str
+    text: str
+
+class MessageResponse(MessageCreate):
+    id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
