@@ -17,7 +17,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Allow React local dev, Vercel frontend, and mobile apps
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,29 +29,42 @@ app.add_middleware(
 def health_check():
     return {"status": "online", "system": "MeetRa Core API"}
 
-# 1. Sync User from Firebase Auth
-@app.post("/api/v1/auth/sync", response_model=schemas.UserResponse)
-def sync_user(user_in: schemas.UserSync, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.firebase_uid == user_in.firebase_uid).first()
+# ----------------- User Profile Endpoints ----------------- #
+
+@app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
+def create_or_get_profile(user_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
+    # Check if a user with this name already exists or create new
+    user = db.query(models.User).filter(models.User.name == user_in.name).first()
     if not user:
-        user = models.User(
-            firebase_uid=user_in.firebase_uid,
-            name=user_in.name,
-            phone_or_email=user_in.phone_or_email,
-            branch=user_in.branch,
-            avatar_url=user_in.avatar_url
-        )
+        user = models.User(**user_in.model_dump())
         db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # Update existing
+        for field, value in user_in.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
         db.commit()
         db.refresh(user)
     return user
 
-# 2. Get All Outings Feed
+@app.get("/api/v1/users/{user_id}", response_model=schemas.UserProfileResponse)
+def get_user_profile(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@app.get("/api/v1/users", response_model=List[schemas.UserProfileResponse])
+def get_all_users(db: Session = Depends(get_db)):
+    return db.query(models.User).all()
+
+# ----------------- Outing Persistence Endpoints ----------------- #
+
 @app.get("/api/v1/outings", response_model=List[schemas.OutingResponse])
 def get_outings(db: Session = Depends(get_db)):
-    return db.query(models.Outing).all()
+    return db.query(models.Outing).order_by(models.Outing.id.desc()).all()
 
-# 3. Create Outing
 @app.post("/api/v1/outings", response_model=schemas.OutingResponse)
 def create_outing(outing_in: schemas.OutingCreate, db: Session = Depends(get_db)):
     new_outing = models.Outing(**outing_in.model_dump())
@@ -61,7 +73,7 @@ def create_outing(outing_in: schemas.OutingCreate, db: Session = Depends(get_db)
     db.refresh(new_outing)
     return new_outing
 
-# ----------------- Itinerary Generator & Matching ----------------- #
+# ----------------- Dynamic Itinerary Generator ----------------- #
 
 class ItineraryRequest(BaseModel):
     available_hours: float
@@ -87,15 +99,14 @@ class ItineraryResponse(BaseModel):
     match_score: Optional[int] = None
     potential_peers: List[dict] = []
 
-# Expanded Place Catalog
 SAMPLE_PLACES = {
     "Food": [
         {"name": "Sarafa / Street Food Lane", "cost": 120, "act": "Evening Chaat & Street Food"},
-        {"name": "Rolls & Shawarma Joint", "cost": 160, "act": "Quick Dinner & Shakes"}
+        {"name": "Rolls & Shawarma Point", "cost": 160, "act": "Quick Dinner & Shakes"}
     ],
     "Cafes": [
         {"name": "Artisan Coffee Roastery", "cost": 210, "act": "Cold Brew & Group Discussion"},
-        {"name": "Open-Air Rooftop Cafe", "cost": 280, "act": "Sunset Views & Chai"}
+        {"name": "Open-Air Rooftop Cafe", "cost": 260, "act": "Sunset Views & Chai"}
     ],
     "Heritage": [
         {"name": "Historic Fort & Museum", "cost": 50, "act": "Architecture Walk & Photography"},
@@ -107,11 +118,11 @@ SAMPLE_PLACES = {
     ],
     "Nature": [
         {"name": "Eco Botanical Garden & Lake", "cost": 40, "act": "Nature Trail & Chill"},
-        {"name": "Valley View Point", "cost": 0, "act": "Sunset Sitting & Jamming"}
+        {"name": "Sunset View Point", "cost": 0, "act": "Sunset Sitting & Jamming"}
     ],
     "Budget": [
-        {"name": "University Tapri Spot", "cost": 30, "act": "Cutting Chai & Maska Bun"},
-        {"name": "Central Library Lawns", "cost": 0, "act": "Open Air Study Session"}
+        {"name": "Campus Tapri Point", "cost": 30, "act": "Cutting Chai & Maska Bun"},
+        {"name": "Central Library Greenery", "cost": 0, "act": "Open Air Study Session"}
     ]
 }
 
@@ -120,8 +131,7 @@ def generate_itinerary(req: ItineraryRequest):
     budget = req.budget
     selected_stops = []
     running_cost = 0
-    
-    # 1. Start point
+
     selected_stops.append(ItineraryStop(
         time="2:00 PM",
         title=req.location,
@@ -130,18 +140,17 @@ def generate_itinerary(req: ItineraryRequest):
         activity="Assemble & Depart"
     ))
 
-    # 2. Pick spots matching user's selected interests
     candidate_spots = []
     for interest in req.interests:
         if interest in SAMPLE_PLACES:
             candidate_spots.extend(SAMPLE_PLACES[interest])
-    
+
     if not candidate_spots:
         candidate_spots = SAMPLE_PLACES["Food"]
 
     random.shuffle(candidate_spots)
 
-    current_hour = 14  # 2:00 PM
+    current_hour = 14
     for spot in candidate_spots:
         if len(selected_stops) >= 4:
             break
@@ -159,16 +168,13 @@ def generate_itinerary(req: ItineraryRequest):
     transit_estimate = 30 if req.is_solo else 20
     calculated_total = running_cost + transit_estimate
 
-    # Dynamic match score
-    match_score = random.randint(85, 98) if not req.is_solo else None
-
     return ItineraryResponse(
         id=random.randint(1000, 9999),
         title=f"{req.location} to {req.outing_type}",
         total_cost=calculated_total,
         est_duration=f"{req.available_hours} hrs",
         timeline=selected_stops,
-        match_score=match_score,
+        match_score=random.randint(86, 97) if not req.is_solo else None,
         potential_peers=[
             {"id": 1, "name": "Aarav Sharma", "college": "CSE '28", "interests": ["Food", "Cafes"], "rating": 4.9, "collabs": 7},
             {"id": 2, "name": "Sneha Patel", "college": "ECE '28", "interests": ["Cafes", "Photography"], "rating": 4.8, "collabs": 4},
