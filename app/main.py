@@ -8,11 +8,6 @@ from sqlalchemy.orm import Session
 from .database import engine, Base, get_db
 from . import models, schemas
 
-from fastapi import Response
-
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return Response(status_code=204)
 
 # Auto-create tables in Neon on launch
 Base.metadata.create_all(bind=engine)
@@ -247,3 +242,35 @@ def send_message(msg_in: schemas.MessageCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(msg)
     return msg
+
+from fastapi import Response
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+# ----------------- Review & Outing Completion ----------------- #
+
+@app.post("/api/v1/reviews", response_model=schemas.ReviewResponse)
+def submit_review(review_in: schemas.ReviewCreate, db: Session = Depends(get_db)):
+    # 1. Save Review
+    new_review = models.Review(**review_in.model_dump())
+    db.add(new_review)
+    
+    # 2. Update Reviewee user stats: increment collabs_completed and recalculate rating
+    reviewee = db.query(models.User).filter(models.User.id == review_in.reviewee_id).first()
+    if reviewee:
+        reviewee.collabs_completed = (reviewee.collabs_completed or 0) + 1
+        # Recalculate average rating
+        all_reviews = db.query(models.Review).filter(models.Review.reviewee_id == review_in.reviewee_id).all()
+        ratings = [r.rating for r in all_reviews] + [review_in.rating]
+        reviewee.rating = round(sum(ratings) / len(ratings), 1)
+
+    # 3. Mark collab status as completed
+    collab = db.query(models.CollabRequest).filter(models.CollabRequest.id == review_in.collab_id).first()
+    if collab:
+        collab.status = "completed"
+
+    db.commit()
+    db.refresh(new_review)
+    return new_review

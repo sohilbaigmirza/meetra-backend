@@ -74,3 +74,19 @@ class MessageResponse(MessageCreate):
 
     class Config:
         from_attributes = True
+
+class ReviewCreate(BaseModel):
+    collab_id: int
+    reviewer_id: int
+    reviewer_name: str
+    reviewee_id: int
+    rating: int
+    tags: Optional[List[str]] = []
+    feedback: Optional[str] = ""
+
+class ReviewResponse(ReviewCreate):
+    id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
