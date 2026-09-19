@@ -60,3 +60,16 @@ class Message(Base):
     sender_name = Column(String, nullable=False)
     text = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    collab_id = Column(Integer, nullable=False)
+    reviewer_id = Column(Integer, nullable=False)
+    reviewer_name = Column(String, nullable=False)
+    reviewee_id = Column(Integer, nullable=False)
+    rating = Column(Integer, nullable=False)
+    tags = Column(JSON, default=list)
+    feedback = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
