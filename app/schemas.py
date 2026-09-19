@@ -90,3 +90,24 @@ class ReviewResponse(ReviewCreate):
 
     class Config:
         from_attributes = True
+
+class UserProfileCreateOrUpdate(BaseModel):
+    firebase_uid: Optional[str] = None
+    name: str
+    college: Optional[str] = "Campus Member"
+    branch: Optional[str] = "1st Year"
+    bio: Optional[str] = "Up for quick cafe hangouts and exploring new spots!"
+    phone_or_email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    interests: Optional[List[str]] = ["Food", "Cafes"]
+    preferred_outing_types: Optional[List[str]] = ["Budget Cafes", "Street Food Crawl"]
+    budget_preference: Optional[int] = 300
+
+class UserProfileResponse(UserProfileCreateOrUpdate):
+    id: int
+    rating: float
+    collabs_completed: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

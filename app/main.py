@@ -136,61 +136,52 @@ SAMPLE_PLACES = {
     ]
 }
 
-@app.post("/api/v1/itinerary/generate", response_model=ItineraryResponse)
-def generate_itinerary(req: ItineraryRequest):
-    budget = req.budget
-    selected_stops = []
-    running_cost = 0
+@app.post("/api/v1/itinerary/generate")
+def generate_itinerary(req: schemas.ItineraryGenerateRequest, db: Session = Depends(get_db)):
+    # 1. Query real places from Neon filtered by budget
+    db_places = db.query(models.Place).filter(models.Place.approx_cost <= req.budget).all()
+    
+    # Fallback to all places if budget query is empty
+    if not db_places:
+        db_places = db.query(models.Place).all()
 
-    selected_stops.append(ItineraryStop(
-        time="2:00 PM",
-        title=req.location,
-        category="Start Point",
-        est_cost=0,
-        activity="Assemble & Depart"
-    ))
+    import random
+    selected_spots = random.sample(db_places, min(len(db_places), 3)) if db_places else []
 
-    candidate_spots = []
-    for interest in req.interests:
-        if interest in SAMPLE_PLACES:
-            candidate_spots.extend(SAMPLE_PLACES[interest])
+    timeline = []
+    total_cost = 40  # baseline auto/travel split
+    start_hour = 16  # 4:00 PM
 
-    if not candidate_spots:
-        candidate_spots = SAMPLE_PLACES["Food"]
+    for idx, spot in enumerate(selected_spots):
+        timeline.append({
+            "time": f"{start_hour + idx}:00 PM",
+            "title": spot.name,
+            "activity": f"{spot.category} hangout at {spot.landmark}",
+            "est_cost": spot.approx_cost
+        })
+        total_cost += spot.approx_cost
 
-    random.shuffle(candidate_spots)
+    # 2. Fetch real peers from Neon instead of dummy users
+    real_users = db.query(models.User).all()
+    peers_list = []
+    for u in real_users:
+        peers_list.append({
+            "id": u.id,
+            "name": u.name,
+            "college": u.college,
+            "collabs": u.collabs_completed or 0,
+            "interests": u.interests or ["Food", "Cafes"]
+        })
 
-    current_hour = 14
-    for spot in candidate_spots:
-        if len(selected_stops) >= 4:
-            break
-        if running_cost + spot["cost"] <= budget:
-            current_hour += 1
-            running_cost += spot["cost"]
-            selected_stops.append(ItineraryStop(
-                time=f"{current_hour % 12 or 12}:00 {'PM' if current_hour >= 12 else 'AM'}",
-                title=spot["name"],
-                category=spot["act"].split()[0],
-                est_cost=spot["cost"],
-                activity=spot["act"]
-            ))
-
-    transit_estimate = 30 if req.is_solo else 20
-    calculated_total = running_cost + transit_estimate
-
-    return ItineraryResponse(
-        id=random.randint(1000, 9999),
-        title=f"{req.location} to {req.outing_type}",
-        total_cost=calculated_total,
-        est_duration=f"{req.available_hours} hrs",
-        timeline=selected_stops,
-        match_score=random.randint(86, 97) if not req.is_solo else None,
-        potential_peers=[
-            {"id": 1, "name": "Aarav Sharma", "college": "CSE '28", "interests": ["Food", "Cafes"], "rating": 4.9, "collabs": 7},
-            {"id": 2, "name": "Sneha Patel", "college": "ECE '28", "interests": ["Cafes", "Photography"], "rating": 4.8, "collabs": 4},
-            {"id": 3, "name": "Ashutosh G.", "college": "IT '27", "interests": ["Adventure", "Arcades"], "rating": 4.7, "collabs": 9}
-        ] if not req.is_solo else []
-    )
+    return {
+        "id": random.randint(1000, 9999),
+        "title": f"Campus to {selected_spots[0].name if selected_spots else 'Gwalior Hotspots'}",
+        "est_duration": f"{req.available_hours}.0 hrs",
+        "total_cost": min(total_cost, req.budget),
+        "timeline": timeline,
+        "match_score": 94,
+        "potential_peers": peers_list
+    }
 
 # ----------------- Collab Request Endpoints ----------------- #
 
@@ -274,3 +265,30 @@ def submit_review(review_in: schemas.ReviewCreate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(new_review)
     return new_review
+
+@app.post("/api/v1/auth/sync", response_model=schemas.UserProfileResponse)
+def sync_user_profile(user_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
+    # Check if user already exists by firebase_uid or phone_or_email
+    user = None
+    if user_in.firebase_uid:
+        user = db.query(models.User).filter(models.User.firebase_uid == user_in.firebase_uid).first()
+    elif user_in.phone_or_email:
+        user = db.query(models.User).filter(models.User.phone_or_email == user_in.phone_or_email).first()
+        
+    if not user:
+        user = models.User(**user_in.model_dump())
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # Update existing profile
+        for key, val in user_in.model_dump(exclude_unset=True).items():
+            setattr(user, key, val)
+        db.commit()
+        db.refresh(user)
+    return user
+
+@app.get("/api/v1/users/peers/{current_user_id}", response_model=List[schemas.UserProfileResponse])
+def get_all_peers(current_user_id: int, db: Session = Depends(get_db)):
+    # Returns all real registered users excluding the current logged-in user
+    return db.query(models.User).filter(models.User.id != current_user_id).all()

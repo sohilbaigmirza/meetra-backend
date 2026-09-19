@@ -73,3 +73,14 @@ class Review(Base):
     tags = Column(JSON, default=list)
     feedback = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Place(Base):
+    __tablename__ = "places"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False)
+    approx_cost = Column(Integer, nullable=False)
+    distance_km = Column(Float, default=2.0)
+    landmark = Column(String, nullable=False)
+    tags = Column(JSON, default=list)
