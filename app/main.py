@@ -4,7 +4,6 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
 from .database import engine, Base, get_db
 from . import models, schemas
 
@@ -71,33 +70,43 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
 @app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
 def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
     user = None
-    
-    # 1. Primary lookup: Exact DB ID
-    if profile_in.id:
-        user = db.query(models.User).filter(models.User.id == profile_in.id).first()
-        
-    # 2. Fallback lookup: Firebase UID or unique name
-    if not user and profile_in.firebase_uid:
-        user = db.query(models.User).filter(models.User.firebase_uid == profile_in.firebase_uid).first()
-    if not user:
-        user = db.query(models.User).filter(models.User.name == profile_in.name).first()
+    profile_id = getattr(profile_in, "id", None)
+    profile_phone = getattr(profile_in, "phone_or_email", None)
+    profile_uid = getattr(profile_in, "firebase_uid", None)
 
-    # 3. Create only if user truly doesn't exist anywhere
+    # 1. Lookup by DB primary key ID
+    if profile_id:
+        user = db.query(models.User).filter(models.User.id == profile_id).first()
+
+    # 2. Lookup by phone_or_email (Critical for registration/login)
+    if not user and profile_phone:
+        user = db.query(models.User).filter(models.User.phone_or_email == profile_phone.strip()).first()
+
+    # 3. Lookup by firebase_uid
+    if not user and profile_uid:
+        user = db.query(models.User).filter(models.User.firebase_uid == profile_uid).first()
+
+    # 4. Fallback lookup by exact name
+    if not user and profile_in.name:
+        user = db.query(models.User).filter(models.User.name == profile_in.name.strip()).first()
+
+    # Create new user record if not found
     if not user:
-        user = models.User(**profile_in.model_dump())
+        user_data = profile_in.model_dump(exclude_unset=True)
+        user_data.pop("id", None)  # Let Postgres assign auto-increment ID
+        user = models.User(**user_data)
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        # Update the existing record without creating a new row
+        # Update existing record
         for key, value in profile_in.model_dump(exclude_unset=True).items():
-            if key != "id":  # Never overwrite primary key
+            if key != "id" and value is not None:
                 setattr(user, key, value)
         db.commit()
         db.refresh(user)
 
     return user
-
 @app.get("/api/v1/users/{user_id}", response_model=schemas.UserProfileResponse)
 def get_user_profile(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
