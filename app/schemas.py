@@ -136,3 +136,12 @@ class FriendshipResponse(FriendshipCreate):
 
     class Config:
         from_attributes = True
+
+class ItineraryGenerateRequest(BaseModel):
+    user_id: Optional[int] = None
+    available_hours: int = 3
+    budget: int = 300
+    location: str = "College Main Gate"
+    interests: Optional[List[str]] = ["Food", "Cafes"]
+    outing_type: Optional[str] = "Casual Hangout"
+    is_solo: Optional[bool] = False
