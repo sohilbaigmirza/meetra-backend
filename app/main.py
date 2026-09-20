@@ -347,3 +347,14 @@ def get_user_friends(user_id: int, db: Session = Depends(get_db)):
         (models.Friendship.requester_id == user_id) | (models.Friendship.receiver_id == user_id)
     ).all()
     return connections
+
+class PhoneLoginRequest(BaseModel):
+    phone: str
+
+@app.post("/api/v1/auth/phone-login")
+def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
+    clean_phone = req.phone.strip()
+    user = db.query(models.User).filter(models.User.phone_or_email == clean_phone).first()
+    if user:
+        return {"is_new_user": False, "user": user}
+    return {"is_new_user": True, "phone": clean_phone}
