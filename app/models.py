@@ -84,3 +84,14 @@ class Place(Base):
     distance_km = Column(Float, default=2.0)
     landmark = Column(String, nullable=False)
     tags = Column(JSON, default=list)
+
+class Friendship(Base):
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requester_id = Column(Integer, nullable=False)
+    requester_name = Column(String, nullable=False)
+    receiver_id = Column(Integer, nullable=False)
+    receiver_name = Column(String, nullable=False)
+    status = Column(String, default="pending")  # 'pending', 'accepted', 'rejected'
+    created_at = Column(DateTime, default=datetime.utcnow)

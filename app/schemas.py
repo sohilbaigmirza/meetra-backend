@@ -119,3 +119,20 @@ class ItineraryGenerateRequest(BaseModel):
     interests: Optional[List[str]] = ["Food", "Cafes"]
     outing_type: Optional[str] = "Casual Hangout"
     is_solo: Optional[bool] = False
+
+class FriendshipCreate(BaseModel):
+    requester_id: int
+    requester_name: str
+    receiver_id: int
+    receiver_name: str
+
+class FriendshipUpdate(BaseModel):
+    status: str  # 'accepted' or 'rejected'
+
+class FriendshipResponse(FriendshipCreate):
+    id: int
+    status: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

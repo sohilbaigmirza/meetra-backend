@@ -292,3 +292,40 @@ def sync_user_profile(user_in: schemas.UserProfileCreateOrUpdate, db: Session = 
 def get_all_peers(current_user_id: int, db: Session = Depends(get_db)):
     # Returns all real registered users excluding the current logged-in user
     return db.query(models.User).filter(models.User.id != current_user_id).all()
+
+# ----------------- Milestone 2.1: Friends & Connections ----------------- #
+
+@app.post("/api/v1/friends/request", response_model=schemas.FriendshipResponse)
+def send_friend_request(req: schemas.FriendshipCreate, db: Session = Depends(get_db)):
+    # Check if request or friendship already exists
+    existing = db.query(models.Friendship).filter(
+        ((models.Friendship.requester_id == req.requester_id) & (models.Friendship.receiver_id == req.receiver_id)) |
+        ((models.Friendship.requester_id == req.receiver_id) & (models.Friendship.receiver_id == req.requester_id))
+    ).first()
+    
+    if existing:
+        return existing
+
+    new_friendship = models.Friendship(**req.model_dump())
+    db.add(new_friendship)
+    db.commit()
+    db.refresh(new_friendship)
+    return new_friendship
+
+@app.put("/api/v1/friends/{friendship_id}", response_model=schemas.FriendshipResponse)
+def respond_friend_request(friendship_id: int, update_data: schemas.FriendshipUpdate, db: Session = Depends(get_db)):
+    f = db.query(models.Friendship).filter(models.Friendship.id == friendship_id).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="Friend request not found")
+    f.status = update_data.status
+    db.commit()
+    db.refresh(f)
+    return f
+
+@app.get("/api/v1/friends/{user_id}")
+def get_user_friends(user_id: int, db: Session = Depends(get_db)):
+    # Returns all connections where user is requester or receiver
+    connections = db.query(models.Friendship).filter(
+        (models.Friendship.requester_id == user_id) | (models.Friendship.receiver_id == user_id)
+    ).all()
+    return connections
