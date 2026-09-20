@@ -147,3 +147,16 @@ class ItineraryGenerateRequest(BaseModel):
     interests: Optional[List[str]] = ["Food", "Cafes"]
     outing_type: Optional[str] = "Casual Hangout"
     is_solo: Optional[bool] = False
+
+class BookmarkToggle(BaseModel):
+    user_id: int
+    outing_id: int
+
+class BookmarkResponse(BaseModel):
+    id: int
+    user_id: int
+    outing_id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

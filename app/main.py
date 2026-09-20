@@ -114,9 +114,57 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-@app.get("/api/v1/users", response_model=List[schemas.UserProfileResponse])
-def get_all_users(db: Session = Depends(get_db)):
-    return db.query(models.User).all()
+@app.get("/api/v1/outings", response_model=List[schemas.OutingResponse])
+def get_outings(
+    tag: Optional[str] = None,
+    max_budget: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Outing)
+    if max_budget is not None:
+        query = query.filter(models.Outing.total_expense <= max_budget)
+    
+    outings = query.order_by(models.Outing.id.desc()).all()
+    
+    # Filter by tag in memory if tag filter is passed
+    if tag and tag.lower() != 'all':
+        clean_tag = tag.lstrip('#').lower()
+        outings = [
+            o for o in outings 
+            if o.tags and any(clean_tag == t.lstrip('#').lower() for t in o.tags)
+        ]
+
+    return outings
+
+# ----------------- Milestone 2.2: Bookmarks / Wishlist ----------------- #
+
+@app.post("/api/v1/bookmarks/toggle")
+def toggle_bookmark(req: schemas.BookmarkToggle, db: Session = Depends(get_db)):
+    existing = db.query(models.Bookmark).filter(
+        models.Bookmark.user_id == req.user_id,
+        models.Bookmark.outing_id == req.outing_id
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"bookmarked": False, "outing_id": req.outing_id}
+    else:
+        new_bookmark = models.Bookmark(user_id=req.user_id, outing_id=req.outing_id)
+        db.add(new_bookmark)
+        db.commit()
+        return {"bookmarked": True, "outing_id": req.outing_id}
+
+@app.get("/api/v1/bookmarks/{user_id}")
+def get_user_bookmarks(user_id: int, db: Session = Depends(get_db)):
+    # Fetch all bookmarked outings for this user
+    bookmarked_rows = db.query(models.Bookmark).filter(models.Bookmark.user_id == user_id).all()
+    outing_ids = [b.outing_id for b in bookmarked_rows]
+    if not outing_ids:
+        return []
+    
+    saved_outings = db.query(models.Outing).filter(models.Outing.id.in_(outing_ids)).all()
+    return saved_outings
 
 # ----------------- Outing Persistence Endpoints ----------------- #
 

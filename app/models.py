@@ -95,3 +95,11 @@ class Friendship(Base):
     receiver_name = Column(String, nullable=False)
     status = Column(String, default="pending")  # 'pending', 'accepted', 'rejected'
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False)
+    outing_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
