@@ -161,14 +161,19 @@ def generate_itinerary(req: schemas.ItineraryGenerateRequest, db: Session = Depe
         })
         total_cost += spot.approx_cost
 
-    # 2. Fetch real peers from Neon instead of dummy users
-    real_users = db.query(models.User).all()
+    # 2. Fetch real peers from Neon, excluding the logged-in user
+    user_query = db.query(models.User)
+    if req.user_id:
+        user_query = user_query.filter(models.User.id != req.user_id)
+    real_users = user_query.all()
+
     peers_list = []
     for u in real_users:
         peers_list.append({
             "id": u.id,
             "name": u.name,
             "college": u.college,
+            "avatar_url": u.avatar_url,
             "collabs": u.collabs_completed or 0,
             "interests": u.interests or ["Food", "Cafes"]
         })
