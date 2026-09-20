@@ -41,6 +41,33 @@ def health_check():
 
 # ----------------- User Profile Endpoints ----------------- #
 
+class PhoneLoginRequest(BaseModel):
+    phone: str
+
+@app.post("/api/v1/auth/phone-login")
+def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
+    clean_phone = req.phone.strip()
+    user = db.query(models.User).filter(models.User.phone_or_email == clean_phone).first()
+    if user:
+        return {
+            "is_new_user": False, 
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "college": user.college,
+                "branch": user.branch,
+                "bio": user.bio,
+                "avatar_url": user.avatar_url,
+                "phone_or_email": user.phone_or_email,
+                "interests": user.interests or ["Food", "Cafes"],
+                "preferred_outing_types": user.preferred_outing_types or ["Budget Cafes"],
+                "budget_preference": user.budget_preference or 300,
+                "rating": user.rating or 5.0,
+                "collabs_completed": user.collabs_completed or 0
+            }
+        }
+    return {"is_new_user": True, "phone": clean_phone}
+
 @app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
 def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
     user = None
