@@ -42,20 +42,33 @@ def health_check():
 # ----------------- User Profile Endpoints ----------------- #
 
 @app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
-def create_or_get_profile(user_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
-    # Check if a user with this name already exists or create new
-    user = db.query(models.User).filter(models.User.name == user_in.name).first()
+def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
+    user = None
+    
+    # 1. Primary lookup: Exact DB ID
+    if profile_in.id:
+        user = db.query(models.User).filter(models.User.id == profile_in.id).first()
+        
+    # 2. Fallback lookup: Firebase UID or unique name
+    if not user and profile_in.firebase_uid:
+        user = db.query(models.User).filter(models.User.firebase_uid == profile_in.firebase_uid).first()
     if not user:
-        user = models.User(**user_in.model_dump())
+        user = db.query(models.User).filter(models.User.name == profile_in.name).first()
+
+    # 3. Create only if user truly doesn't exist anywhere
+    if not user:
+        user = models.User(**profile_in.model_dump())
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        # Update existing
-        for field, value in user_in.model_dump(exclude_unset=True).items():
-            setattr(user, field, value)
+        # Update the existing record without creating a new row
+        for key, value in profile_in.model_dump(exclude_unset=True).items():
+            if key != "id":  # Never overwrite primary key
+                setattr(user, key, value)
         db.commit()
         db.refresh(user)
+
     return user
 
 @app.get("/api/v1/users/{user_id}", response_model=schemas.UserProfileResponse)

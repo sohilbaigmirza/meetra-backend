@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class UserProfileCreateOrUpdate(BaseModel):
+    id: Optional[int] = None           # <--- ADD THIS
+    firebase_uid: Optional[str] = None
     name: str
     college: Optional[str] = "Campus Member"
     branch: Optional[str] = "1st Year"
