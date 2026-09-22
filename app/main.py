@@ -1,12 +1,11 @@
 import random
 from typing import List, Optional, Dict
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .database import engine, Base, get_db
 from . import models, schemas
-
 
 # Auto-create tables in Neon on launch
 Base.metadata.create_all(bind=engine)
@@ -38,7 +37,11 @@ app.add_middleware(
 def health_check():
     return {"status": "online", "system": "MeetRa Core API"}
 
-# ----------------- User Profile Endpoints ----------------- #
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+# ----------------- User Profile & Auth Endpoints ----------------- #
 
 class PhoneLoginRequest(BaseModel):
     phone: str
@@ -66,6 +69,47 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
             }
         }
     return {"is_new_user": True, "phone": clean_phone}
+class GoogleAuthRequest(BaseModel):
+    firebase_uid: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+
+@app.post("/api/v1/auth/google", response_model=schemas.UserProfileResponse)
+def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
+    # 1. Lookup by persistent Firebase UID
+    user = db.query(models.User).filter(models.User.firebase_uid == req.firebase_uid).first()
+
+    # 2. Fallback lookup by email / phone
+    if not user and req.email:
+        user = db.query(models.User).filter(models.User.phone_or_email == req.email.strip()).first()
+        if user:
+            # Link existing profile to this Firebase UID
+            user.firebase_uid = req.firebase_uid
+            db.commit()
+            db.refresh(user)
+
+    # 3. If new student, insert clean row with Google profile info
+    if not user:
+        user = models.User(
+            firebase_uid=req.firebase_uid,
+            name=req.name.strip() if req.name else "Campus Member",
+            phone_or_email=req.email.strip(),
+            avatar_url=req.avatar_url,
+            college="Campus Member",
+            branch="1st Year",
+            bio="Up for quick cafe hangouts and exploring new spots!",
+            interests=["Food", "Cafes"],
+            preferred_outing_types=["Budget Cafes", "Heritage Walk"],
+            budget_preference=300,
+            rating=5.0,
+            collabs_completed=0
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return user
 
 @app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
 def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
@@ -74,32 +118,23 @@ def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: 
     profile_phone = getattr(profile_in, "phone_or_email", None)
     profile_uid = getattr(profile_in, "firebase_uid", None)
 
-    # 1. Lookup by DB primary key ID
     if profile_id:
         user = db.query(models.User).filter(models.User.id == profile_id).first()
-
-    # 2. Lookup by phone_or_email (Critical for registration/login)
     if not user and profile_phone:
         user = db.query(models.User).filter(models.User.phone_or_email == profile_phone.strip()).first()
-
-    # 3. Lookup by firebase_uid
     if not user and profile_uid:
         user = db.query(models.User).filter(models.User.firebase_uid == profile_uid).first()
-
-    # 4. Fallback lookup by exact name
     if not user and profile_in.name:
         user = db.query(models.User).filter(models.User.name == profile_in.name.strip()).first()
 
-    # Create new user record if not found
     if not user:
         user_data = profile_in.model_dump(exclude_unset=True)
-        user_data.pop("id", None)  # Let Postgres assign auto-increment ID
+        user_data.pop("id", None)
         user = models.User(**user_data)
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        # Update existing record
         for key, value in profile_in.model_dump(exclude_unset=True).items():
             if key != "id" and value is not None:
                 setattr(user, key, value)
@@ -107,12 +142,19 @@ def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: 
         db.refresh(user)
 
     return user
+
 @app.get("/api/v1/users/{user_id}", response_model=schemas.UserProfileResponse)
 def get_user_profile(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@app.get("/api/v1/users/peers/{current_user_id}", response_model=List[schemas.UserProfileResponse])
+def get_all_peers(current_user_id: int, db: Session = Depends(get_db)):
+    return db.query(models.User).filter(models.User.id != current_user_id).all()
+
+# ----------------- Outings Feed & Filter Endpoints ----------------- #
 
 @app.get("/api/v1/outings", response_model=List[schemas.OutingResponse])
 def get_outings(
@@ -126,7 +168,6 @@ def get_outings(
     
     outings = query.order_by(models.Outing.id.desc()).all()
     
-    # Filter by tag in memory if tag filter is passed
     if tag and tag.lower() != 'all':
         clean_tag = tag.lstrip('#').lower()
         outings = [
@@ -135,6 +176,14 @@ def get_outings(
         ]
 
     return outings
+
+@app.post("/api/v1/outings", response_model=schemas.OutingResponse)
+def create_outing(outing_in: schemas.OutingCreate, db: Session = Depends(get_db)):
+    new_outing = models.Outing(**outing_in.model_dump())
+    db.add(new_outing)
+    db.commit()
+    db.refresh(new_outing)
+    return new_outing
 
 # ----------------- Milestone 2.2: Bookmarks / Wishlist ----------------- #
 
@@ -157,97 +206,25 @@ def toggle_bookmark(req: schemas.BookmarkToggle, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/bookmarks/{user_id}")
 def get_user_bookmarks(user_id: int, db: Session = Depends(get_db)):
-    # Fetch all bookmarked outings for this user
     bookmarked_rows = db.query(models.Bookmark).filter(models.Bookmark.user_id == user_id).all()
     outing_ids = [b.outing_id for b in bookmarked_rows]
     if not outing_ids:
         return []
-    
-    saved_outings = db.query(models.Outing).filter(models.Outing.id.in_(outing_ids)).all()
-    return saved_outings
-
-# ----------------- Outing Persistence Endpoints ----------------- #
-
-@app.get("/api/v1/outings", response_model=List[schemas.OutingResponse])
-def get_outings(db: Session = Depends(get_db)):
-    return db.query(models.Outing).order_by(models.Outing.id.desc()).all()
-
-@app.post("/api/v1/outings", response_model=schemas.OutingResponse)
-def create_outing(outing_in: schemas.OutingCreate, db: Session = Depends(get_db)):
-    new_outing = models.Outing(**outing_in.model_dump())
-    db.add(new_outing)
-    db.commit()
-    db.refresh(new_outing)
-    return new_outing
+    return db.query(models.Outing).filter(models.Outing.id.in_(outing_ids)).all()
 
 # ----------------- Dynamic Itinerary Generator ----------------- #
 
-class ItineraryRequest(BaseModel):
-    available_hours: float
-    budget: int
-    location: str
-    interests: List[str]
-    outing_type: str
-    is_solo: bool
-
-class ItineraryStop(BaseModel):
-    time: str
-    title: str
-    category: str
-    est_cost: int
-    activity: str
-
-class ItineraryResponse(BaseModel):
-    id: int
-    title: str
-    total_cost: int
-    est_duration: str
-    timeline: List[ItineraryStop]
-    match_score: Optional[int] = None
-    potential_peers: List[dict] = []
-
-SAMPLE_PLACES = {
-    "Food": [
-        {"name": "Sarafa / Street Food Lane", "cost": 120, "act": "Evening Chaat & Street Food"},
-        {"name": "Rolls & Shawarma Point", "cost": 160, "act": "Quick Dinner & Shakes"}
-    ],
-    "Cafes": [
-        {"name": "Artisan Coffee Roastery", "cost": 210, "act": "Cold Brew & Group Discussion"},
-        {"name": "Open-Air Rooftop Cafe", "cost": 260, "act": "Sunset Views & Chai"}
-    ],
-    "Heritage": [
-        {"name": "Historic Fort & Museum", "cost": 50, "act": "Architecture Walk & Photography"},
-        {"name": "Royal Memorial Cenotaphs", "cost": 30, "act": "Historical Exploration"}
-    ],
-    "Adventure": [
-        {"name": "Laser Tag & Arcade Arena", "cost": 350, "act": "Competitive Gaming"},
-        {"name": "Go-Karting Speedway", "cost": 450, "act": "Sprint Racing Laps"}
-    ],
-    "Nature": [
-        {"name": "Eco Botanical Garden & Lake", "cost": 40, "act": "Nature Trail & Chill"},
-        {"name": "Sunset View Point", "cost": 0, "act": "Sunset Sitting & Jamming"}
-    ],
-    "Budget": [
-        {"name": "Campus Tapri Point", "cost": 30, "act": "Cutting Chai & Maska Bun"},
-        {"name": "Central Library Greenery", "cost": 0, "act": "Open Air Study Session"}
-    ]
-}
-
 @app.post("/api/v1/itinerary/generate")
 def generate_itinerary(req: schemas.ItineraryGenerateRequest, db: Session = Depends(get_db)):
-    # 1. Query real places from Neon filtered by budget
     db_places = db.query(models.Place).filter(models.Place.approx_cost <= req.budget).all()
-    
-    # Fallback to all places if budget query is empty
     if not db_places:
         db_places = db.query(models.Place).all()
 
-    import random
     selected_spots = random.sample(db_places, min(len(db_places), 3)) if db_places else []
 
     timeline = []
-    total_cost = 40  # baseline auto/travel split
-    start_hour = 16  # 4:00 PM
+    total_cost = 40
+    start_hour = 16
 
     for idx, spot in enumerate(selected_spots):
         timeline.append({
@@ -258,7 +235,6 @@ def generate_itinerary(req: schemas.ItineraryGenerateRequest, db: Session = Depe
         })
         total_cost += spot.approx_cost
 
-    # 2. Fetch real peers from Neon, excluding the logged-in user
     user_query = db.query(models.User)
     if req.user_id:
         user_query = user_query.filter(models.User.id != req.user_id)
@@ -289,7 +265,6 @@ def generate_itinerary(req: schemas.ItineraryGenerateRequest, db: Session = Depe
 
 @app.post("/api/v1/collabs", response_model=schemas.CollabRequestResponse)
 def send_collab_request(req_in: schemas.CollabRequestCreate, db: Session = Depends(get_db)):
-    # Check if request already sent
     existing = db.query(models.CollabRequest).filter(
         models.CollabRequest.outing_id == req_in.outing_id,
         models.CollabRequest.sender_id == req_in.sender_id,
@@ -306,7 +281,6 @@ def send_collab_request(req_in: schemas.CollabRequestCreate, db: Session = Depen
 
 @app.get("/api/v1/collabs/user/{user_id}", response_model=List[schemas.CollabRequestResponse])
 def get_user_collab_requests(user_id: int, db: Session = Depends(get_db)):
-    # Fetch pending incoming requests for this user
     return db.query(models.CollabRequest).filter(
         (models.CollabRequest.receiver_id == user_id) | (models.CollabRequest.sender_id == user_id)
     ).order_by(models.CollabRequest.id.desc()).all()
@@ -316,7 +290,6 @@ def update_collab_status(collab_id: int, update_in: schemas.CollabRequestUpdate,
     collab = db.query(models.CollabRequest).filter(models.CollabRequest.id == collab_id).first()
     if not collab:
         raise HTTPException(status_code=404, detail="Collab request not found")
-    
     collab.status = update_in.status
     db.commit()
     db.refresh(collab)
@@ -336,30 +309,20 @@ def send_message(msg_in: schemas.MessageCreate, db: Session = Depends(get_db)):
     db.refresh(msg)
     return msg
 
-from fastapi import Response
-
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return Response(status_code=204)
-
 # ----------------- Review & Outing Completion ----------------- #
 
 @app.post("/api/v1/reviews", response_model=schemas.ReviewResponse)
 def submit_review(review_in: schemas.ReviewCreate, db: Session = Depends(get_db)):
-    # 1. Save Review
     new_review = models.Review(**review_in.model_dump())
     db.add(new_review)
     
-    # 2. Update Reviewee user stats: increment collabs_completed and recalculate rating
     reviewee = db.query(models.User).filter(models.User.id == review_in.reviewee_id).first()
     if reviewee:
         reviewee.collabs_completed = (reviewee.collabs_completed or 0) + 1
-        # Recalculate average rating
         all_reviews = db.query(models.Review).filter(models.Review.reviewee_id == review_in.reviewee_id).all()
         ratings = [r.rating for r in all_reviews] + [review_in.rating]
         reviewee.rating = round(sum(ratings) / len(ratings), 1)
 
-    # 3. Mark collab status as completed
     collab = db.query(models.CollabRequest).filter(models.CollabRequest.id == review_in.collab_id).first()
     if collab:
         collab.status = "completed"
@@ -368,43 +331,14 @@ def submit_review(review_in: schemas.ReviewCreate, db: Session = Depends(get_db)
     db.refresh(new_review)
     return new_review
 
-@app.post("/api/v1/auth/sync", response_model=schemas.UserProfileResponse)
-def sync_user_profile(user_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):
-    # Check if user already exists by firebase_uid or phone_or_email
-    user = None
-    if user_in.firebase_uid:
-        user = db.query(models.User).filter(models.User.firebase_uid == user_in.firebase_uid).first()
-    elif user_in.phone_or_email:
-        user = db.query(models.User).filter(models.User.phone_or_email == user_in.phone_or_email).first()
-        
-    if not user:
-        user = models.User(**user_in.model_dump())
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    else:
-        # Update existing profile
-        for key, val in user_in.model_dump(exclude_unset=True).items():
-            setattr(user, key, val)
-        db.commit()
-        db.refresh(user)
-    return user
-
-@app.get("/api/v1/users/peers/{current_user_id}", response_model=List[schemas.UserProfileResponse])
-def get_all_peers(current_user_id: int, db: Session = Depends(get_db)):
-    # Returns all real registered users excluding the current logged-in user
-    return db.query(models.User).filter(models.User.id != current_user_id).all()
-
 # ----------------- Milestone 2.1: Friends & Connections ----------------- #
 
 @app.post("/api/v1/friends/request", response_model=schemas.FriendshipResponse)
 def send_friend_request(req: schemas.FriendshipCreate, db: Session = Depends(get_db)):
-    # Check if request or friendship already exists
     existing = db.query(models.Friendship).filter(
         ((models.Friendship.requester_id == req.requester_id) & (models.Friendship.receiver_id == req.receiver_id)) |
         ((models.Friendship.requester_id == req.receiver_id) & (models.Friendship.receiver_id == req.requester_id))
     ).first()
-    
     if existing:
         return existing
 
@@ -426,19 +360,6 @@ def respond_friend_request(friendship_id: int, update_data: schemas.FriendshipUp
 
 @app.get("/api/v1/friends/{user_id}")
 def get_user_friends(user_id: int, db: Session = Depends(get_db)):
-    # Returns all connections where user is requester or receiver
-    connections = db.query(models.Friendship).filter(
+    return db.query(models.Friendship).filter(
         (models.Friendship.requester_id == user_id) | (models.Friendship.receiver_id == user_id)
     ).all()
-    return connections
-
-class PhoneLoginRequest(BaseModel):
-    phone: str
-
-@app.post("/api/v1/auth/phone-login")
-def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
-    clean_phone = req.phone.strip()
-    user = db.query(models.User).filter(models.User.phone_or_email == clean_phone).first()
-    if user:
-        return {"is_new_user": False, "user": user}
-    return {"is_new_user": True, "phone": clean_phone}
