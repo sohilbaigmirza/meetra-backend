@@ -41,6 +41,48 @@ def health_check():
 def favicon():
     return Response(status_code=204)
 
+#  Google sig in endpoints
+class GoogleAuthRequest(BaseModel):
+    firebase_uid: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+
+@app.post("/api/v1/auth/google", response_model=schemas.UserProfileResponse)
+def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
+    # 1. Lookup by persistent Firebase UID
+    user = db.query(models.User).filter(models.User.firebase_uid == req.firebase_uid).first()
+
+    # 2. Fallback lookup by email
+    if not user and req.email:
+        user = db.query(models.User).filter(models.User.phone_or_email == req.email.strip()).first()
+        if user:
+            user.firebase_uid = req.firebase_uid
+            db.commit()
+            db.refresh(user)
+
+    # 3. Create fresh record if student is signing up for the first time
+    if not user:
+        user = models.User(
+            firebase_uid=req.firebase_uid,
+            name=req.name.strip() if req.name else "Student",
+            phone_or_email=req.email.strip(),
+            avatar_url=req.avatar_url,
+            college="Campus Member",
+            branch="1st Year",
+            bio="Up for quick cafe hangouts and exploring new spots!",
+            interests=["Food", "Cafes"],
+            preferred_outing_types=["Budget Cafes", "Heritage Walk"],
+            budget_preference=300,
+            rating=5.0,
+            collabs_completed=0
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return user
+
 # ----------------- User Profile & Auth Endpoints ----------------- #
 
 class PhoneLoginRequest(BaseModel):
