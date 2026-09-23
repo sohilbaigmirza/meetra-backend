@@ -1,5 +1,6 @@
 import random
 from typing import List, Optional, Dict
+from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -41,7 +42,7 @@ def health_check():
 def favicon():
     return Response(status_code=204)
 
-# ----------------- Google Sign-In Endpoint ----------------- #
+# ----------------- Google Sign-In & Auth ----------------- #
 
 class GoogleAuthRequest(BaseModel):
     firebase_uid: str
@@ -49,12 +50,10 @@ class GoogleAuthRequest(BaseModel):
     name: str
     avatar_url: Optional[str] = None
 
-@app.post("/api/v1/auth/google", response_model=schemas.UserProfileResponse)
+@app.post("/api/v1/auth/google", response_model=schemas.GoogleAuthResponse)
 def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
-    # 1. Lookup by persistent Firebase UID
     user = db.query(models.User).filter(models.User.firebase_uid == req.firebase_uid).first()
 
-    # 2. Fallback lookup by email
     if not user and req.email:
         user = db.query(models.User).filter(models.User.phone_or_email == req.email.strip()).first()
         if user:
@@ -62,16 +61,18 @@ def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
-    # 3. Create fresh record if student is signing up for the first time
+    is_new = False
     if not user:
+        is_new = True
         user = models.User(
             firebase_uid=req.firebase_uid,
             name=req.name.strip() if req.name else "Student",
             phone_or_email=req.email.strip(),
             avatar_url=req.avatar_url,
-            college="Campus Member",
-            branch="1st Year",
-            bio="Up for quick cafe hangouts and exploring new spots!",
+            age=19,
+            college="ITM University",
+            branch="B.Tech CSE • 1st Year",
+            bio="Up for quick cafe hangouts & street food trails!",
             interests=["Food", "Cafes"],
             preferred_outing_types=["Budget Cafes", "Heritage Walk"],
             budget_preference=300,
@@ -82,77 +83,13 @@ def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    return user
+    needs_setup = is_new or (user.college in ["Campus Member", None])
+    return {
+        "user": user,
+        "is_new_user": needs_setup
+    }
 
-# ----------------- User Profile & Auth Endpoints ----------------- #
-
-class PhoneLoginRequest(BaseModel):
-    phone: str
-
-@app.post("/api/v1/auth/phone-login")
-def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
-    clean_phone = req.phone.strip()
-    user = db.query(models.User).filter(models.User.phone_or_email == clean_phone).first()
-    if user:
-        return {
-            "is_new_user": False, 
-            "user": {
-                "id": user.id,
-                "name": user.name,
-                "college": user.college,
-                "branch": user.branch,
-                "bio": user.bio,
-                "avatar_url": user.avatar_url,
-                "phone_or_email": user.phone_or_email,
-                "interests": user.interests or ["Food", "Cafes"],
-                "preferred_outing_types": user.preferred_outing_types or ["Budget Cafes"],
-                "budget_preference": user.budget_preference or 300,
-                "rating": user.rating or 5.0,
-                "collabs_completed": user.collabs_completed or 0
-            }
-        }
-    return {"is_new_user": True, "phone": clean_phone}
-class GoogleAuthRequest(BaseModel):
-    firebase_uid: str
-    email: str
-    name: str
-    avatar_url: Optional[str] = None
-
-@app.post("/api/v1/auth/google", response_model=schemas.UserProfileResponse)
-def google_auth_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
-    # 1. Lookup by persistent Firebase UID
-    user = db.query(models.User).filter(models.User.firebase_uid == req.firebase_uid).first()
-
-    # 2. Fallback lookup by email / phone
-    if not user and req.email:
-        user = db.query(models.User).filter(models.User.phone_or_email == req.email.strip()).first()
-        if user:
-            # Link existing profile to this Firebase UID
-            user.firebase_uid = req.firebase_uid
-            db.commit()
-            db.refresh(user)
-
-    # 3. If new student, insert clean row with Google profile info
-    if not user:
-        user = models.User(
-            firebase_uid=req.firebase_uid,
-            name=req.name.strip() if req.name else "Campus Member",
-            phone_or_email=req.email.strip(),
-            avatar_url=req.avatar_url,
-            college="Campus Member",
-            branch="1st Year",
-            bio="Up for quick cafe hangouts and exploring new spots!",
-            interests=["Food", "Cafes"],
-            preferred_outing_types=["Budget Cafes", "Heritage Walk"],
-            budget_preference=300,
-            rating=5.0,
-            collabs_completed=0
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    return user
+# ----------------- User Profile Endpoints ----------------- #
 
 @app.post("/api/v1/users/profile", response_model=schemas.UserProfileResponse)
 def create_or_update_profile(profile_in: schemas.UserProfileCreateOrUpdate, db: Session = Depends(get_db)):

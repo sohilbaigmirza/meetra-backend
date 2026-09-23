@@ -160,3 +160,37 @@ class BookmarkResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class UserProfileCreateOrUpdate(BaseModel):
+    id: Optional[int] = None
+    firebase_uid: Optional[str] = None
+    name: str
+    age: Optional[int] = None           # <--- ADD THIS
+    college: Optional[str] = "ITM University"
+    branch: Optional[str] = "1st Year"
+    bio: Optional[str] = None
+    phone_or_email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    interests: Optional[List[str]] = ["Food", "Cafes"]
+    preferred_outing_types: Optional[List[str]] = ["Budget Cafes", "Street Food Crawl"]
+    budget_preference: Optional[int] = 300
+
+class UserProfileResponse(BaseModel):
+    id: int
+    firebase_uid: Optional[str] = None
+    name: str
+    age: Optional[int] = None           # <--- ADD THIS
+    college: Optional[str] = None
+    branch: Optional[str] = None
+    bio: Optional[str] = None
+    phone_or_email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    rating: Optional[float] = 5.0
+    collabs_completed: Optional[int] = 0
+    interests: Optional[List[str]] = []
+    preferred_outing_types: Optional[List[str]] = []
+    budget_preference: Optional[int] = 300
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

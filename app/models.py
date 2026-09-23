@@ -19,6 +19,7 @@ class User(Base):
     preferred_outing_types = Column(JSON, default=list)  # e.g. ["Budget Cafes", "Heritage Walk"]
     budget_preference = Column(Integer, default=300)
     created_at = Column(DateTime, default=datetime.utcnow)
+    age = Column(Integer, nullable=True)
 
 class Outing(Base):
     __tablename__ = "outings"
