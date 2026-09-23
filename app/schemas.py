@@ -227,3 +227,45 @@ class MessageCreate(BaseModel):
     receiver_id: Optional[int] = None   # None for group chats
     sender_name: str
     text: str
+
+class PartnerCafeResponse(BaseModel):
+    id: int
+    name: str
+    category: str
+    landmark: str
+    discount_text: str
+    min_spend: int
+    cover_image: Optional[str] = None
+    contact_phone: Optional[str] = None
+    operating_hours: str
+    rating: float
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class CafeBookingCreate(BaseModel):
+    user_id: int
+    user_name: str
+    user_phone_or_email: Optional[str] = None
+    cafe_id: int
+    cafe_name: str
+    party_size: int
+    booking_time: str
+    booking_date: str
+
+class CafeBookingResponse(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    cafe_id: int
+    cafe_name: str
+    party_size: int
+    booking_time: str
+    booking_date: str
+    pass_code: str
+    status: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

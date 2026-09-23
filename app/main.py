@@ -366,3 +366,30 @@ def get_user_friends(user_id: int, db: Session = Depends(get_db)):
     return db.query(models.Friendship).filter(
         (models.Friendship.requester_id == user_id) | (models.Friendship.receiver_id == user_id)
     ).all()
+
+# ----------------- Milestone 3.1: Partner Cafes & Spot Pre-Bookings ----------------- #
+
+@app.get("/api/v1/partners", response_model=List[schemas.PartnerCafeResponse])
+def get_partner_cafes(db: Session = Depends(get_db)):
+    return db.query(models.PartnerCafe).filter(models.PartnerCafe.is_active == True).all()
+
+@app.post("/api/v1/partners/book", response_model=schemas.CafeBookingResponse)
+def create_cafe_booking(booking_in: schemas.CafeBookingCreate, db: Session = Depends(get_db)):
+    # Generate student discount check-in code like #MR-8392
+    pass_code = f"MR-{random.randint(1000, 9999)}"
+    
+    booking = models.CafeBooking(
+        **booking_in.model_dump(),
+        pass_code=pass_code,
+        status="confirmed"
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+@app.get("/api/v1/partners/bookings/user/{user_id}", response_model=List[schemas.CafeBookingResponse])
+def get_user_cafe_bookings(user_id: int, db: Session = Depends(get_db)):
+    return db.query(models.CafeBooking).filter(
+        models.CafeBooking.user_id == user_id
+    ).order_by(models.CafeBooking.id.desc()).all()

@@ -105,3 +105,36 @@ class Bookmark(Base):
     user_id = Column(Integer, nullable=False)
     outing_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PartnerCafe(Base):
+    __tablename__ = "partner_cafes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, default="Cafe")
+    landmark = Column(String, nullable=False)
+    discount_text = Column(String, default="Flat 15% Student Off")
+    min_spend = Column(Integer, default=200)
+    cover_image = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
+    operating_hours = Column(String, default="11:00 AM - 11:00 PM")
+    rating = Column(Float, default=4.8)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CafeBooking(Base):
+    __tablename__ = "cafe_bookings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_name = Column(String, nullable=False)
+    user_phone_or_email = Column(String, nullable=True)
+    cafe_id = Column(Integer, ForeignKey("partner_cafes.id"), nullable=False)
+    cafe_name = Column(String, nullable=False)
+    party_size = Column(Integer, default=2)
+    booking_time = Column(String, nullable=False)
+    booking_date = Column(String, nullable=False)
+    pass_code = Column(String, nullable=False)
+    status = Column(String, default="confirmed")
+    created_at = Column(DateTime, default=datetime.utcnow)
