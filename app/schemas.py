@@ -194,3 +194,10 @@ class UserProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class GoogleAuthResponse(BaseModel):
+    user: UserProfileResponse
+    is_new_user: bool
+
+    class Config:
+        from_attributes = True
