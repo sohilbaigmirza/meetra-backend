@@ -41,7 +41,8 @@ def health_check():
 def favicon():
     return Response(status_code=204)
 
-#  Google sig in endpoints
+# ----------------- Google Sign-In Endpoint ----------------- #
+
 class GoogleAuthRequest(BaseModel):
     firebase_uid: str
     email: str
