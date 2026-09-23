@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, JSON, DateTime, ForeignKey
 from datetime import datetime
 from .database import Base
 
@@ -15,8 +15,8 @@ class User(Base):
     avatar_url = Column(String, nullable=True)
     rating = Column(Float, default=5.0)
     collabs_completed = Column(Integer, default=0)
-    interests = Column(JSON, default=list)  # e.g. ["Food", "Cafes"]
-    preferred_outing_types = Column(JSON, default=list)  # e.g. ["Budget Cafes", "Heritage Walk"]
+    interests = Column(JSON, default=list)
+    preferred_outing_types = Column(JSON, default=list)
     budget_preference = Column(Integer, default=300)
     created_at = Column(DateTime, default=datetime.utcnow)
     age = Column(Integer, nullable=True)
@@ -56,8 +56,9 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    collab_id = Column(Integer, nullable=False, index=True)
-    sender_id = Column(Integer, nullable=False)
+    collab_id = Column(Integer, nullable=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     sender_name = Column(String, nullable=False)
     text = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -94,7 +95,7 @@ class Friendship(Base):
     requester_name = Column(String, nullable=False)
     receiver_id = Column(Integer, nullable=False)
     receiver_name = Column(String, nullable=False)
-    status = Column(String, default="pending")  # 'pending', 'accepted', 'rejected'
+    status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Bookmark(Base):

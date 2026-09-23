@@ -201,3 +201,22 @@ class GoogleAuthResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class MessageCreate(BaseModel):
+    collab_id: Optional[int] = None
+    sender_id: int
+    receiver_id: int
+    sender_name: str
+    text: str
+
+class MessageResponse(BaseModel):
+    id: int
+    collab_id: Optional[int] = None
+    sender_id: int
+    receiver_id: Optional[int] = None
+    sender_name: str
+    text: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

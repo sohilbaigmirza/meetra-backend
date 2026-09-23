@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from .database import engine, Base, get_db
 from . import models, schemas
@@ -275,10 +276,25 @@ def update_collab_status(collab_id: int, update_in: schemas.CollabRequestUpdate,
     db.refresh(collab)
     return collab
 
-# ----------------- Chat Endpoints ----------------- #
+# ----------------- Unified Chat Endpoints ----------------- #
+
+@app.get("/api/v1/chat/thread/{user_a}/{user_b}", response_model=List[schemas.MessageResponse])
+def get_user_thread(user_a: int, user_b: int, db: Session = Depends(get_db)):
+    """
+    Fetches the single unified conversation history between two students,
+    regardless of which outing or collab originated the chat.
+    """
+    messages = db.query(models.Message).filter(
+        or_(
+            and_(models.Message.sender_id == user_a, models.Message.receiver_id == user_b),
+            and_(models.Message.sender_id == user_b, models.Message.receiver_id == user_a)
+        )
+    ).order_by(models.Message.id.asc()).all()
+    return messages
 
 @app.get("/api/v1/chat/{collab_id}", response_model=List[schemas.MessageResponse])
-def get_messages(collab_id: int, db: Session = Depends(get_db)):
+def get_messages_by_collab(collab_id: int, db: Session = Depends(get_db)):
+    """Fallback query by collab_id."""
     return db.query(models.Message).filter(models.Message.collab_id == collab_id).order_by(models.Message.id.asc()).all()
 
 @app.post("/api/v1/chat", response_model=schemas.MessageResponse)
