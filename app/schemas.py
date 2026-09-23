@@ -220,3 +220,10 @@ class MessageResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class MessageCreate(BaseModel):
+    collab_id: Optional[int] = None      # Stores outing/group ID
+    sender_id: int
+    receiver_id: Optional[int] = None   # None for group chats
+    sender_name: str
+    text: str

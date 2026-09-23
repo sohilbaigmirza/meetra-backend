@@ -305,6 +305,13 @@ def send_message(msg_in: schemas.MessageCreate, db: Session = Depends(get_db)):
     db.refresh(msg)
     return msg
 
+@app.get("/api/v1/chat/group/{outing_id}", response_model=List[schemas.MessageResponse])
+def get_group_chat_messages(outing_id: int, db: Session = Depends(get_db)):
+    """Fetches all messages in a group outing chat."""
+    return db.query(models.Message).filter(
+        models.Message.collab_id == outing_id
+    ).order_by(models.Message.id.asc()).all()
+
 # ----------------- Review & Outing Completion ----------------- #
 
 @app.post("/api/v1/reviews", response_model=schemas.ReviewResponse)
